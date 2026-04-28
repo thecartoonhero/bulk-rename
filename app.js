@@ -1,0 +1,418 @@
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────
+let files  = [];          // { name: string, getContent: () => Promise<ArrayBuffer> }
+let csvMap = new Map();   // basename → new basename
+let mode   = 'rules';     // 'rules' | 'csv'
+const NOW  = new Date();  // snapshot date/time for the session
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const fileDrop    = document.getElementById('file-drop');
+const fileInput   = document.getElementById('file-input');
+const fileBrowse  = document.getElementById('file-browse');
+const previewTbody = document.getElementById('preview-tbody');
+const fileBadge   = document.getElementById('file-badge');
+const clearBtn    = document.getElementById('clear-btn');
+const downloadBtn = document.getElementById('download-btn');
+const dupeWarn    = document.getElementById('dupe-warning');
+const csvDrop     = document.getElementById('csv-drop');
+const csvInput    = document.getElementById('csv-input');
+const csvBrowse   = document.getElementById('csv-browse');
+const csvText     = document.getElementById('csv-text');
+const csvApply    = document.getElementById('csv-apply');
+const csvStatus   = document.getElementById('csv-status');
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function splitName(fullPath) {
+  const lastSlash = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+  const dir  = lastSlash >= 0 ? fullPath.slice(0, lastSlash + 1) : '';
+  const base = lastSlash >= 0 ? fullPath.slice(lastSlash + 1)   : fullPath;
+  const dot  = base.lastIndexOf('.');
+  if (dot <= 0) return { dir, name: base, ext: '' };
+  return { dir, name: base.slice(0, dot), ext: base.slice(dot) };
+}
+
+function esc(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function v(id)    { return document.getElementById(id).value; }
+function cb(id)   { return document.getElementById(id).checked; }
+function num(id, def = 0) { return parseInt(v(id), 10) || def; }
+
+// Apply a string transform to name, ext, or both.
+// fn receives the bare string (no leading dot on ext).
+function applyScope(name, ext, scope, fn) {
+  if (scope === 'name' || scope === 'both') {
+    name = fn(name);
+  }
+  if ((scope === 'ext' || scope === 'both') && ext) {
+    ext = '.' + fn(ext.slice(1));
+  }
+  return { name, ext };
+}
+
+// ── Rule functions (applied in order 1–7) ─────────────────────────────────
+
+function ruleTrim(name, ext) {
+  if (!cb('trim-on')) return { name, ext };
+
+  let n = name;
+  if (cb('trim-lead'))  n = n.trimStart();
+  if (cb('trim-trail')) n = n.trimEnd();
+
+  const fromStart = num('trim-start');
+  const fromEnd   = num('trim-end');
+  if (fromStart > 0) n = n.slice(fromStart);
+  if (fromEnd   > 0 && fromEnd < n.length) n = n.slice(0, n.length - fromEnd);
+
+  return { name: n, ext };
+}
+
+function ruleFindReplace(name, ext) {
+  if (!cb('fr-on')) return { name, ext };
+
+  const find = v('fr-find');
+  if (!find) return { name, ext };
+
+  const isRegex = cb('fr-regex');
+  const caseSensitive = cb('fr-case');
+  const replace = v('fr-replace');
+  const scope = v('fr-scope');
+
+  function doReplace(str) {
+    try {
+      const flags = 'g' + (caseSensitive ? '' : 'i');
+      const pattern = isRegex ? find : find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return str.replace(new RegExp(pattern, flags), replace);
+    } catch {
+      return str; // invalid regex — leave unchanged
+    }
+  }
+
+  return applyScope(name, ext, scope, doReplace);
+}
+
+function ruleCase(name, ext) {
+  if (!cb('case-on')) return { name, ext };
+
+  const type  = v('case-type');
+  const scope = v('case-scope');
+
+  function doCase(str) {
+    switch (type) {
+      case 'lower':    return str.toLowerCase();
+      case 'upper':    return str.toUpperCase();
+      case 'title':
+        // lowercase everything, then capitalise first letter after word-boundary separators
+        return str.toLowerCase().replace(/(^|[\s\-_.])[a-z]/g, m => m.toUpperCase());
+      case 'sentence': return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+      default: return str;
+    }
+  }
+
+  return applyScope(name, ext, scope, doCase);
+}
+
+function ruleInsert(name, ext) {
+  if (!cb('ins-on')) return { name, ext };
+
+  const text    = v('ins-text');
+  if (!text) return { name, ext };
+
+  const pos     = num('ins-pos');
+  const fromEnd = cb('ins-fromend');
+  const scope   = v('ins-scope');
+
+  function doInsert(str) {
+    const idx = fromEnd
+      ? Math.max(0, str.length - pos)
+      : Math.min(pos, str.length);
+    return str.slice(0, idx) + text + str.slice(idx);
+  }
+
+  return applyScope(name, ext, scope, doInsert);
+}
+
+function rulePrefixSuffix(name, ext) {
+  if (!cb('ps-on')) return { name, ext };
+  return {
+    name: v('ps-prefix') + name + v('ps-suffix'),
+    ext,
+  };
+}
+
+function ruleDate(name, ext) {
+  if (!cb('date-on')) return { name, ext };
+
+  const fmt = v('date-fmt');
+  const pos = v('date-pos');
+  const sep = v('date-sep');
+
+  const y  = NOW.getFullYear();
+  const mo = String(NOW.getMonth() + 1).padStart(2, '0');
+  const d  = String(NOW.getDate()).padStart(2, '0');
+  const h  = String(NOW.getHours()).padStart(2, '0');
+  const mi = String(NOW.getMinutes()).padStart(2, '0');
+  const s  = String(NOW.getSeconds()).padStart(2, '0');
+
+  const dateStr = fmt
+    .replace('YYYY', y)
+    .replace('YY',   String(y).slice(-2))
+    .replace('MM', mo).replace('DD', d)
+    .replace('HH', h) .replace('mm', mi).replace('ss', s);
+
+  return {
+    name: pos === 'prefix' ? dateStr + sep + name : name + sep + dateStr,
+    ext,
+  };
+}
+
+function ruleCounter(name, ext, index) {
+  if (!cb('ctr-on')) return { name, ext };
+
+  const start = num('ctr-start', 1);
+  const step  = num('ctr-step',  1);
+  const pad   = Math.max(1, num('ctr-pad', 1));
+  const sep   = v('ctr-sep');
+  const pos   = v('ctr-pos');
+
+  const numStr = String(start + index * step).padStart(pad, '0');
+
+  return {
+    name: pos === 'prefix' ? numStr + sep + name : name + sep + numStr,
+    ext,
+  };
+}
+
+// ── Core rename ────────────────────────────────────────────────────────────
+
+function applyRules(fullPath, index) {
+  let { dir, name, ext } = splitName(fullPath);
+
+  ({ name, ext } = ruleTrim(name, ext));
+  ({ name, ext } = ruleFindReplace(name, ext));
+  ({ name, ext } = ruleCase(name, ext));
+  ({ name, ext } = ruleInsert(name, ext));
+  ({ name, ext } = rulePrefixSuffix(name, ext));
+  ({ name, ext } = ruleDate(name, ext));
+  ({ name, ext } = ruleCounter(name, ext, index));
+
+  return dir + name + ext;
+}
+
+function csvNewName(fullPath) {
+  const { dir, name, ext } = splitName(fullPath);
+  const base = name + ext;
+  return dir + (csvMap.has(base) ? csvMap.get(base) : base);
+}
+
+function getNewName(fullPath, index) {
+  return mode === 'rules' ? applyRules(fullPath, index) : csvNewName(fullPath);
+}
+
+// ── Preview ────────────────────────────────────────────────────────────────
+
+function updatePreview() {
+  fileBadge.textContent = `${files.length} file${files.length !== 1 ? 's' : ''}`;
+
+  if (files.length === 0) {
+    previewTbody.innerHTML = '<tr class="empty-row"><td colspan="2">Upload files to see a preview</td></tr>';
+    downloadBtn.disabled = true;
+    dupeWarn.classList.add('hidden');
+    return;
+  }
+
+  downloadBtn.disabled = false;
+
+  const newNames = files.map(({ name }, i) => getNewName(name, i));
+
+  // Detect duplicates
+  const seen = new Set();
+  const dupes = new Set();
+  for (const n of newNames) {
+    if (seen.has(n)) dupes.add(n);
+    seen.add(n);
+  }
+
+  dupeWarn.classList.toggle('hidden', dupes.size === 0);
+
+  previewTbody.innerHTML = files.map(({ name }, i) => {
+    const newName = newNames[i];
+    const changed = newName !== name;
+    const isDupe  = dupes.has(newName);
+    let cls = '';
+    if (isDupe)        cls = 'dupe';
+    else if (changed)  cls = 'changed';
+    return `<tr${cls ? ` class="${cls}"` : ''}>
+      <td title="${esc(name)}">${esc(name)}</td>
+      <td title="${esc(newName)}" class="${changed ? 'new-name' : ''}">${esc(newName)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── File loading ───────────────────────────────────────────────────────────
+
+async function loadFiles(fileList) {
+  const loaded = [];
+
+  for (const file of fileList) {
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      try {
+        const zip = await JSZip.loadAsync(file);
+        zip.forEach((path, entry) => {
+          if (!entry.dir) {
+            loaded.push({ name: path, getContent: () => entry.async('arraybuffer') });
+          }
+        });
+      } catch (err) {
+        console.warn('Could not read zip:', err);
+      }
+    } else {
+      loaded.push({ name: file.name, getContent: () => file.arrayBuffer() });
+    }
+  }
+
+  loaded.sort((a, b) => a.name.localeCompare(b.name));
+  files = loaded;
+  updatePreview();
+}
+
+// ── CSV parsing ────────────────────────────────────────────────────────────
+
+function parseAndApplyCSV(text) {
+  const map = new Map();
+  let errors = 0;
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    // Naive CSV split on first comma; strip optional surrounding quotes
+    const comma = line.indexOf(',');
+    if (comma < 0) { errors++; continue; }
+
+    const strip = s => s.trim().replace(/^["']|["']$/g, '');
+    const orig  = strip(line.slice(0, comma));
+    const next  = strip(line.slice(comma + 1));
+
+    if (orig && next) map.set(orig, next);
+    else errors++;
+  }
+
+  csvMap = map;
+
+  const msg = `${map.size} mapping${map.size !== 1 ? 's' : ''} loaded` +
+              (errors ? `, ${errors} invalid row${errors !== 1 ? 's' : ''} skipped` : '');
+  csvStatus.textContent = msg;
+  csvStatus.className   = 'csv-status ' + (map.size > 0 ? 'success' : 'error');
+
+  updatePreview();
+}
+
+// ── Download ───────────────────────────────────────────────────────────────
+
+async function downloadZip() {
+  if (!files.length) return;
+
+  downloadBtn.disabled = true;
+  downloadBtn.textContent = 'Processing…';
+
+  try {
+    const zip = new JSZip();
+
+    for (let i = 0; i < files.length; i++) {
+      const newName = getNewName(files[i].name, i);
+      const buf     = await files[i].getContent();
+      zip.file(newName, buf);
+    }
+
+    const blob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), { href: url, download: 'renamed.zip' });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } finally {
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = 'Rename & Download ZIP';
+  }
+}
+
+// ── Drag-and-drop helper ───────────────────────────────────────────────────
+
+function makeDrop(zone, onFiles) {
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', e => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    onFiles([...e.dataTransfer.files]);
+  });
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+
+  // File drop zone
+  makeDrop(fileDrop, loadFiles);
+  fileDrop.addEventListener('click', () => fileInput.click());
+  fileBrowse.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
+  fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fileInput.value = ''; });
+  clearBtn.addEventListener('click', () => { files = []; updatePreview(); });
+
+  // CSV drop zone
+  makeDrop(csvDrop, async drops => {
+    const csv = drops.find(f => f.name.toLowerCase().endsWith('.csv'));
+    if (csv) { csvText.value = await csv.text(); parseAndApplyCSV(csvText.value); }
+  });
+  csvDrop.addEventListener('click', () => csvInput.click());
+  csvBrowse.addEventListener('click', e => { e.stopPropagation(); csvInput.click(); });
+  csvInput.addEventListener('change', async () => {
+    if (csvInput.files[0]) { csvText.value = await csvInput.files[0].text(); parseAndApplyCSV(csvText.value); }
+    csvInput.value = '';
+  });
+  csvApply.addEventListener('click', () => parseAndApplyCSV(csvText.value));
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      mode = tab.dataset.tab;
+      updatePreview();
+    });
+  });
+
+  // Rule enable/disable toggle (visual state + preview)
+  document.querySelectorAll('.rule-check input[type="checkbox"]').forEach(checkbox => {
+    const card = checkbox.closest('.rule-card');
+    const sync = () => card.classList.toggle('enabled', checkbox.checked);
+    checkbox.addEventListener('change', () => { sync(); updatePreview(); });
+    sync();
+  });
+
+  // Any input change inside the rules panel → refresh preview
+  document.getElementById('tab-rules').addEventListener('input',  updatePreview);
+  document.getElementById('tab-rules').addEventListener('change', updatePreview);
+
+  // Download
+  downloadBtn.addEventListener('click', downloadZip);
+
+  updatePreview();
+});
