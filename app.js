@@ -6,6 +6,12 @@ let csvMap = new Map();   // basename → new basename
 let mode   = 'rules';     // 'rules' | 'csv'
 const NOW  = new Date();  // snapshot date/time for the session
 
+const ZIP_SIZE_LIMIT    = 500 * 1024 * 1024;  // 500 MB compressed
+const UNCOMPRESSED_WARN = 200 * 1024 * 1024;  // 200 MB uncompressed total
+const FILE_CAP          = 2000;
+const PREVIEW_CAP       = 500;
+const CSV_LIMIT         = 1 * 1024 * 1024;    // 1 MB
+
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const fileDrop    = document.getElementById('file-drop');
 const fileInput   = document.getElementById('file-input');
@@ -21,6 +27,17 @@ const csvBrowse   = document.getElementById('csv-browse');
 const csvText     = document.getElementById('csv-text');
 const csvApply    = document.getElementById('csv-apply');
 const csvStatus   = document.getElementById('csv-status');
+const fileStatus  = document.getElementById('file-status');
+
+function showFileError(msg)   { fileStatus.textContent = msg; fileStatus.className = 'file-status error'; }
+function showFileWarning(msg) { fileStatus.textContent = msg; fileStatus.className = 'file-status warning'; }
+function clearFileStatus()    { fileStatus.className = 'file-status hidden'; }
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+const debouncedUpdatePreview = debounce(updatePreview, 120);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -238,7 +255,11 @@ function updatePreview() {
 
   dupeWarn.classList.toggle('hidden', dupes.size === 0);
 
-  previewTbody.innerHTML = files.map(({ name }, i) => {
+  const visibleFiles = files.slice(0, PREVIEW_CAP);
+  const overflow = files.length > PREVIEW_CAP
+    ? `<tr class="empty-row"><td colspan="2">…and ${files.length - PREVIEW_CAP} more files not shown</td></tr>`
+    : '';
+  previewTbody.innerHTML = visibleFiles.map(({ name }, i) => {
     const newName = newNames[i];
     const changed = newName !== name;
     const isDupe  = dupes.has(newName);
@@ -249,29 +270,47 @@ function updatePreview() {
       <td title="${esc(name)}">${esc(name)}</td>
       <td title="${esc(newName)}" class="${changed ? 'new-name' : ''}">${esc(newName)}</td>
     </tr>`;
-  }).join('');
+  }).join('') + overflow;
 }
 
 // ── File loading ───────────────────────────────────────────────────────────
 
 async function loadFiles(fileList) {
   const loaded = [];
+  clearFileStatus();
 
   for (const file of fileList) {
     if (file.name.toLowerCase().endsWith('.zip')) {
+      if (file.size > ZIP_SIZE_LIMIT) {
+        showFileError(`"${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(0)} MB). Browsers load files entirely into memory, so ZIPs over 500 MB may cause the tab to crash. Try splitting your archive into smaller ZIPs and processing them separately.`);
+        continue;
+      }
       try {
         const zip = await JSZip.loadAsync(file);
+
+        let estimatedBytes = 0;
+        zip.forEach((_, e) => { estimatedBytes += e._data?.uncompressedSize ?? 0; });
+        if (estimatedBytes > UNCOMPRESSED_WARN) {
+          showFileWarning(`ZIP contains ~${(estimatedBytes / 1024 / 1024).toFixed(0)} MB of uncompressed content. The browser holds all of this in memory while renaming — the download step may be slow or unresponsive. For best results, split large archives into smaller ZIPs under 200 MB.`);
+        }
+
         zip.forEach((path, entry) => {
-          if (!entry.dir) {
+          if (!entry.dir && loaded.length < FILE_CAP) {
             loaded.push({ name: path, getContent: () => entry.async('arraybuffer') });
           }
         });
       } catch (err) {
-        console.warn('Could not read zip:', err);
+        showFileError(`Could not read "${file.name}": ${err.message}`);
       }
     } else {
-      loaded.push({ name: file.name, getContent: () => file.arrayBuffer() });
+      if (loaded.length < FILE_CAP) {
+        loaded.push({ name: file.name, getContent: () => file.arrayBuffer() });
+      }
     }
+  }
+
+  if (loaded.length >= FILE_CAP) {
+    showFileWarning('Only the first 2,000 files were loaded. Renaming more files at once can slow down or freeze the browser. To process the rest, clear the current batch and drop the remaining files separately.');
   }
 
   loaded.sort((a, b) => a.name.localeCompare(b.name));
@@ -282,6 +321,12 @@ async function loadFiles(fileList) {
 // ── CSV parsing ────────────────────────────────────────────────────────────
 
 function parseAndApplyCSV(text) {
+  if (text.length > CSV_LIMIT) {
+    csvStatus.textContent = 'CSV is too large (limit: 1 MB). A mapping file this size is unusual — consider trimming unused rows, or split your files into smaller batches with a separate CSV each.';
+    csvStatus.className = 'csv-status error';
+    return;
+  }
+
   const map = new Map();
   let errors = 0;
 
@@ -324,15 +369,13 @@ async function downloadZip() {
 
     for (let i = 0; i < files.length; i++) {
       const newName = getNewName(files[i].name, i);
-      const buf     = await files[i].getContent();
-      zip.file(newName, buf);
+      zip.file(newName, files[i].getContent());
     }
 
-    const blob = await zip.generateAsync({
-      type: 'blob',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 },
-    });
+    const blob = await zip.generateAsync(
+      { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+      ({ percent }) => { downloadBtn.textContent = `Processing… ${Math.round(percent)}%`; }
+    );
 
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), { href: url, download: 'renamed.zip' });
@@ -377,12 +420,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // CSV drop zone
   makeDrop(csvDrop, async drops => {
     const csv = drops.find(f => f.name.toLowerCase().endsWith('.csv'));
-    if (csv) { csvText.value = await csv.text(); parseAndApplyCSV(csvText.value); }
+    if (csv) {
+      if (csv.size > CSV_LIMIT) {
+        csvStatus.textContent = `CSV file is too large (${(csv.size / 1024).toFixed(0)} KB, limit: 1 MB). Consider trimming unused rows, or split your files into smaller batches with a separate CSV each.`;
+        csvStatus.className = 'csv-status error';
+        return;
+      }
+      csvText.value = await csv.text();
+      parseAndApplyCSV(csvText.value);
+    }
   });
   csvDrop.addEventListener('click', () => csvInput.click());
   csvBrowse.addEventListener('click', e => { e.stopPropagation(); csvInput.click(); });
   csvInput.addEventListener('change', async () => {
-    if (csvInput.files[0]) { csvText.value = await csvInput.files[0].text(); parseAndApplyCSV(csvText.value); }
+    const csv = csvInput.files[0];
+    if (csv) {
+      if (csv.size > CSV_LIMIT) {
+        csvStatus.textContent = `CSV file is too large (${(csv.size / 1024).toFixed(0)} KB, limit: 1 MB). Consider trimming unused rows, or split your files into smaller batches with a separate CSV each.`;
+        csvStatus.className = 'csv-status error';
+        csvInput.value = '';
+        return;
+      }
+      csvText.value = await csv.text();
+      parseAndApplyCSV(csvText.value);
+    }
     csvInput.value = '';
   });
   csvApply.addEventListener('click', () => parseAndApplyCSV(csvText.value));
@@ -408,8 +469,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Any input change inside the rules panel → refresh preview
-  document.getElementById('tab-rules').addEventListener('input',  updatePreview);
-  document.getElementById('tab-rules').addEventListener('change', updatePreview);
+  document.getElementById('tab-rules').addEventListener('input',  debouncedUpdatePreview);
+  document.getElementById('tab-rules').addEventListener('change', debouncedUpdatePreview);
 
   // Download
   downloadBtn.addEventListener('click', downloadZip);

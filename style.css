@@ -349,6 +349,11 @@ textarea:focus {
 .csv-status.success { display: block; background: var(--success-bg); color: var(--success-fg); }
 .csv-status.error   { display: block; background: var(--error-bg);   color: var(--error-fg);   }
 
+.file-status         { font-size: 13px; padding: 8px 12px; border-radius: var(--radius-sm); flex-shrink: 0; }
+.file-status.hidden  { display: none; }
+.file-status.error   { display: block; background: var(--error-bg);  color: var(--error-fg); }
+.file-status.warning { display: block; background: #fef3c7;          color: #92400e; }
+
 /* ── Main pane ───────────────────────────────────────────── */
 .main-pane {
   display: flex;
