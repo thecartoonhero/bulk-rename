@@ -354,24 +354,23 @@ textarea:focus {
 .file-status.error   { display: block; background: var(--error-bg);  color: var(--error-fg); }
 .file-status.warning { display: block; background: #fef3c7;          color: #92400e; }
 
+.drop-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -6px;
+}
+
 .info-btn {
   background: none;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
+  border: none;
   font-size: 11px;
-  line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  vertical-align: middle;
-  transition: color 0.12s, border-color 0.12s;
+  font-family: inherit;
+  transition: color 0.12s;
 }
-.info-btn:hover { color: var(--accent); border-color: var(--accent); }
+.info-btn:hover { color: var(--accent); }
 
 .limit-info {
   background: var(--panel);
@@ -383,8 +382,8 @@ textarea:focus {
 }
 .limit-info.hidden { display: none; }
 .limit-info strong { font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px; }
-.limit-info ul { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
-.limit-info li { color: var(--text-muted); line-height: 1.5; }
+.limit-info ul { margin: 0; padding-left: 16px; }
+.limit-info li { color: var(--text-muted); line-height: 1.5; margin-top: 4px; }
 .limit-info li strong { display: inline; font-size: inherit; margin-bottom: 0; }
 
 /* ── Main pane ───────────────────────────────────────────── */

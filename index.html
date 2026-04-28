@@ -274,8 +274,12 @@
     <div class="drop-zone" id="file-drop">
       <span class="drop-icon">⬆</span>
       <p class="drop-text">Drop files or a ZIP archive here</p>
-      <p class="drop-hint">or <button class="link-btn" id="file-browse">browse files</button> &nbsp;<button class="info-btn" id="limit-info-btn" aria-label="View file size limits">ⓘ</button></p>
+      <p class="drop-hint">or <button class="link-btn" id="file-browse">browse files</button></p>
       <input type="file" id="file-input" multiple hidden>
+    </div>
+
+    <div class="drop-meta">
+      <button class="info-btn" id="limit-info-btn" aria-label="View file size limits">ⓘ File limits</button>
     </div>
 
     <div id="limit-info" class="limit-info hidden" role="status">
