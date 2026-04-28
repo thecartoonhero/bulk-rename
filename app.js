@@ -27,7 +27,9 @@ const csvBrowse   = document.getElementById('csv-browse');
 const csvText     = document.getElementById('csv-text');
 const csvApply    = document.getElementById('csv-apply');
 const csvStatus   = document.getElementById('csv-status');
-const fileStatus  = document.getElementById('file-status');
+const fileStatus    = document.getElementById('file-status');
+const limitInfoBtn  = document.getElementById('limit-info-btn');
+const limitInfo     = document.getElementById('limit-info');
 
 function showFileError(msg)   { fileStatus.textContent = msg; fileStatus.className = 'file-status error'; }
 function showFileWarning(msg) { fileStatus.textContent = msg; fileStatus.className = 'file-status warning'; }
@@ -409,6 +411,13 @@ function makeDrop(zone, onFiles) {
 // ── Init ───────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+
+  // Limit info toggle
+  limitInfoBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    limitInfo.classList.toggle('hidden');
+  });
+  document.addEventListener('click', () => limitInfo.classList.add('hidden'));
 
   // File drop zone
   makeDrop(fileDrop, loadFiles);

@@ -274,8 +274,17 @@
     <div class="drop-zone" id="file-drop">
       <span class="drop-icon">⬆</span>
       <p class="drop-text">Drop files or a ZIP archive here</p>
-      <p class="drop-hint">or <button class="link-btn" id="file-browse">browse files</button></p>
+      <p class="drop-hint">or <button class="link-btn" id="file-browse">browse files</button> &nbsp;<button class="info-btn" id="limit-info-btn" aria-label="View file size limits">ⓘ</button></p>
       <input type="file" id="file-input" multiple hidden>
+    </div>
+
+    <div id="limit-info" class="limit-info hidden" role="status">
+      <strong>File limits</strong>
+      <ul>
+        <li><strong>ZIP archives:</strong> max 500 MB compressed. ZIPs with over 200 MB of uncompressed content may be slow to process.</li>
+        <li><strong>File count:</strong> max 2,000 files per batch. Use Clear and re-upload to process the rest.</li>
+        <li><strong>CSV mappings:</strong> max 1 MB. Trim unused rows or split into multiple CSVs for large sets.</li>
+      </ul>
     </div>
 
     <div id="file-status" class="file-status hidden"></div>
