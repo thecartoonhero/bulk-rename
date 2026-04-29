@@ -252,6 +252,25 @@ textarea:focus {
 
 .find-row .flex-input { flex: 1; min-width: 0; }
 
+.help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.45;
+  cursor: help;
+  vertical-align: middle;
+  margin-left: 3px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.help:hover { opacity: 0.8; }
+
 .pill { display: flex; align-items: center; }
 .pill input { display: none; }
 

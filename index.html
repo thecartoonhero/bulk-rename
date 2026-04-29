@@ -66,13 +66,28 @@
             <label>Find</label>
             <div class="find-row">
               <input type="text" id="fr-find" class="flex-input" placeholder="Text or pattern">
-              <label class="pill" title="Regular expression"><input type="checkbox" id="fr-regex"><span>.*</span></label>
-              <label class="pill" title="Case sensitive"><input type="checkbox" id="fr-case"><span>Aa</span></label>
+              <label class="pill" title="Regular expression mode — use patterns like \d+ for digits, [abc] for character sets, (foo|bar) for alternatives"><input type="checkbox" id="fr-regex"><span>.*</span></label>
+              <label class="pill" title="Case sensitive — when on, Photo and photo are treated as different words"><input type="checkbox" id="fr-case"><span>Aa</span></label>
+              <label class="pill" title="Whole word — match only complete words. &quot;cat&quot; will match &quot;cats&quot; but not &quot;concatenate&quot;"><input type="checkbox" id="fr-word"><span>\b</span></label>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Preceded by <span class="help" title='Only match when immediately preceded by this text. Example: find "001", preceded by "IMG_" renames IMG_001 but leaves VID_001 unchanged'>?</span></label>
+              <input type="text" id="fr-before" placeholder="Text before match">
+            </div>
+            <div class="field">
+              <label>Followed by <span class="help" title='Only match when immediately followed by this text. Example: find "report", followed by "_final" renames report_final but leaves report_draft unchanged'>?</span></label>
+              <input type="text" id="fr-after" placeholder="Text after match">
             </div>
           </div>
           <div class="field">
-            <label>Replace <small>($1 $2 … for capture groups)</small></label>
+            <label>Replace <small>($1 $2 $& … for groups / whole match)</small></label>
             <input type="text" id="fr-replace" placeholder="Replacement text">
+          </div>
+          <div class="field">
+            <label>Max replacements <span class="help" title="Stop replacing after this many matches, counting left to right. Enter 1 to change only the first occurrence. Leave blank to replace all">?</span></label>
+            <input type="number" id="fr-maxrep" min="1" placeholder="∞">
           </div>
           <div class="field">
             <label>Apply to</label>

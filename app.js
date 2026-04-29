@@ -95,18 +95,50 @@ function ruleFindReplace(name, ext) {
   const find = v('fr-find');
   if (!find) return { name, ext };
 
-  const isRegex = cb('fr-regex');
+  const isRegex       = cb('fr-regex');
   const caseSensitive = cb('fr-case');
-  const replace = v('fr-replace');
-  const scope = v('fr-scope');
+  const wholeWord     = cb('fr-word');
+  const replace       = v('fr-replace');
+  const scope         = v('fr-scope');
+  const before        = v('fr-before');
+  const after         = v('fr-after');
+  const maxRepRaw     = v('fr-maxrep');
+  const maxRep        = maxRepRaw === '' ? Infinity : (parseInt(maxRepRaw, 10) || 1);
+
+  function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  function expandReplacement(tpl, wholeMatch, ...groups) {
+    return tpl.replace(/\$(\$|&|\d+)/g, (_, token) => {
+      if (token === '$') return '$';
+      if (token === '&') return wholeMatch;
+      const n = parseInt(token, 10);
+      return (n >= 1 && n <= groups.length) ? (groups[n - 1] ?? '') : `$${token}`;
+    });
+  }
 
   function doReplace(str) {
     try {
       const flags = 'g' + (caseSensitive ? '' : 'i');
-      const pattern = isRegex ? find : find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return str.replace(new RegExp(pattern, flags), replace);
+
+      let core = isRegex ? find : escRe(find);
+      if (wholeWord) core = `\\b${core}\\b`;
+
+      const lb = before ? `(?<=${isRegex ? before : escRe(before)})` : '';
+      const la = after  ? `(?=${isRegex  ? after  : escRe(after)})`  : '';
+      const re = new RegExp(lb + core + la, flags);
+
+      if (maxRep === Infinity) {
+        return str.replace(re, replace);
+      }
+
+      let count = 0;
+      return str.replace(re, (wholeMatch, ...rest) => {
+        const groups = rest.slice(0, rest.length - 2);
+        if (count < maxRep) { count++; return expandReplacement(replace, wholeMatch, ...groups); }
+        return wholeMatch;
+      });
     } catch {
-      return str; // invalid regex — leave unchanged
+      return str;
     }
   }
 
