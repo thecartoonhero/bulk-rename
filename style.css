@@ -222,6 +222,10 @@ textarea:focus {
   align-items: start;
 }
 
+.field-row--wide-left {
+  grid-template-columns: 3fr 2fr;
+}
+
 .check-group {
   display: flex;
   flex-direction: column;
@@ -701,8 +705,12 @@ textarea:focus {
   width: 32px;
   padding: 0 4px;
   text-align: center;
+  overflow: visible;
+  vertical-align: middle;
 }
 .preview-table .col-check input[type="checkbox"] {
+  display: block;
+  margin: 0 auto;
   cursor: pointer;
   accent-color: var(--accent);
 }
