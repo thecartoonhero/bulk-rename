@@ -328,13 +328,35 @@
         </div>
       </div>
 
+      <div class="preview-toolbar-search">
+        <input type="search" class="search-input" id="file-search" placeholder="Filter files…">
+        <select class="sort-select" id="file-sort">
+          <option value="name-asc">Name ↑</option>
+          <option value="name-desc">Name ↓</option>
+          <option value="ext">Extension</option>
+          <option value="changed">Changed only</option>
+        </select>
+      </div>
+
+      <div class="selection-bar hidden" id="selection-bar">
+        <span class="selection-count" id="selection-count"></span>
+        <div class="folder-input-wrap hidden" id="folder-input-wrap">
+          <input type="text" class="folder-input" id="folder-input" placeholder="Folder name…">
+          <button class="btn-secondary folder-btn" id="folder-confirm-btn">Assign</button>
+          <button class="btn-ghost" id="folder-cancel-btn">Cancel</button>
+        </div>
+        <button class="btn-secondary sel-action-btn" id="sel-folder-btn">Move to folder</button>
+        <button class="btn-ghost sel-action-btn" id="sel-unfolder-btn">Remove from folder</button>
+        <button class="btn-ghost sel-action-btn" id="sel-delete-btn" style="color: var(--error-fg)">Delete selected</button>
+      </div>
+
       <div class="table-wrap">
         <table class="preview-table">
           <thead>
-            <tr><th>Original</th><th>Renamed</th><th></th></tr>
+            <tr><th class="col-check"><input type="checkbox" id="select-all"></th><th>Original</th><th>Renamed</th><th></th></tr>
           </thead>
           <tbody id="preview-tbody">
-            <tr class="empty-row"><td colspan="2">Upload files to see a preview</td></tr>
+            <tr class="empty-row"><td colspan="4">Upload files to see a preview</td></tr>
           </tbody>
         </table>
       </div>

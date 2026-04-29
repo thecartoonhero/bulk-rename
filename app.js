@@ -1,10 +1,13 @@
 'use strict';
 
 // ── State ──────────────────────────────────────────────────────────────────
-let files  = [];          // { name: string, getContent: () => Promise<ArrayBuffer> }
-let csvMap = new Map();   // basename → new basename
-let mode   = 'rules';     // 'rules' | 'csv'
-const NOW  = new Date();  // snapshot date/time for the session
+let files         = [];          // { name: string, getContent: () => Promise<ArrayBuffer>, folderOverride?: string }
+let csvMap        = new Map();   // basename → new basename
+let mode          = 'rules';     // 'rules' | 'csv'
+let selectedNames = new Set();   // filenames currently selected
+let filterQuery   = '';          // current search filter string
+let sortMode      = 'name-asc';  // current sort mode
+const NOW         = new Date();  // snapshot date/time for the session
 
 const ZIP_SIZE_LIMIT    = 500 * 1024 * 1024;  // 500 MB compressed
 const UNCOMPRESSED_WARN = 200 * 1024 * 1024;  // 200 MB uncompressed total
@@ -27,9 +30,21 @@ const csvBrowse   = document.getElementById('csv-browse');
 const csvText     = document.getElementById('csv-text');
 const csvApply    = document.getElementById('csv-apply');
 const csvStatus   = document.getElementById('csv-status');
-const fileStatus    = document.getElementById('file-status');
-const limitInfoBtn  = document.getElementById('limit-info-btn');
-const limitInfo     = document.getElementById('limit-info');
+const fileStatus      = document.getElementById('file-status');
+const limitInfoBtn    = document.getElementById('limit-info-btn');
+const limitInfo       = document.getElementById('limit-info');
+const selectionBar    = document.getElementById('selection-bar');
+const selectionCount  = document.getElementById('selection-count');
+const selFolderBtn    = document.getElementById('sel-folder-btn');
+const selUnfolderBtn  = document.getElementById('sel-unfolder-btn');
+const selDeleteBtn    = document.getElementById('sel-delete-btn');
+const folderInputWrap = document.getElementById('folder-input-wrap');
+const folderInput     = document.getElementById('folder-input');
+const folderConfirmBtn = document.getElementById('folder-confirm-btn');
+const folderCancelBtn  = document.getElementById('folder-cancel-btn');
+const selectAll       = document.getElementById('select-all');
+const fileSearch      = document.getElementById('file-search');
+const fileSort        = document.getElementById('file-sort');
 
 function showFileError(msg)   { fileStatus.textContent = msg; fileStatus.className = 'file-status error'; }
 function showFileWarning(msg) { fileStatus.textContent = msg; fileStatus.className = 'file-status warning'; }
@@ -277,49 +292,101 @@ function getNewName(fullPath, index) {
   return mode === 'rules' ? applyRules(fullPath, index) : csvNewName(fullPath);
 }
 
+// ── Preview helpers ────────────────────────────────────────────────────────
+
+function getFilteredSorted() {
+  const q = filterQuery.toLowerCase();
+  let result = files.map((f, i) => ({ ...f, originalIndex: i, newName: getNewName(f.name, i) }));
+  if (q) result = result.filter(f =>
+    f.name.toLowerCase().includes(q) || f.newName.toLowerCase().includes(q)
+  );
+  if (sortMode === 'name-desc') {
+    result.sort((a, b) => b.name.localeCompare(a.name));
+  } else if (sortMode === 'ext') {
+    result.sort((a, b) => {
+      const ea = a.name.split('.').pop() ?? '';
+      const eb = b.name.split('.').pop() ?? '';
+      return ea.localeCompare(eb) || a.name.localeCompare(b.name);
+    });
+  } else if (sortMode === 'changed') {
+    result = result.filter(f => f.newName !== f.name);
+  }
+  return result;
+}
+
+function updateSelectionBar() {
+  const count = selectedNames.size;
+  if (count === 0) {
+    selectionBar.classList.add('hidden');
+    folderInputWrap.classList.add('hidden');
+    return;
+  }
+  selectionBar.classList.remove('hidden');
+  selectionCount.textContent = `${count} file${count !== 1 ? 's' : ''} selected`;
+  const selFiles  = files.filter(f => selectedNames.has(f.name));
+  const hasFolded = selFiles.some(f => f.folderOverride);
+  selUnfolderBtn.classList.toggle('hidden', !hasFolded);
+}
+
 // ── Preview ────────────────────────────────────────────────────────────────
 
 function updatePreview() {
-  fileBadge.textContent = `${files.length} file${files.length !== 1 ? 's' : ''}`;
+  const totalCount = files.length;
+  const filtered   = getFilteredSorted();
+  const showing    = filtered.length;
+  const isFiltered = filterQuery !== '' || sortMode === 'changed';
 
-  if (files.length === 0) {
-    previewTbody.innerHTML = '<tr class="empty-row"><td colspan="3">Upload files to see a preview</td></tr>';
+  fileBadge.textContent = isFiltered
+    ? `${showing} / ${totalCount} file${totalCount !== 1 ? 's' : ''}`
+    : `${totalCount} file${totalCount !== 1 ? 's' : ''}`;
+
+  if (totalCount === 0) {
+    previewTbody.innerHTML = '<tr class="empty-row"><td colspan="4">Upload files to see a preview</td></tr>';
     downloadBtn.disabled = true;
     dupeWarn.classList.add('hidden');
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+    updateSelectionBar();
     return;
   }
 
   downloadBtn.disabled = false;
 
-  const newNames = files.map(({ name }, i) => getNewName(name, i));
-
-  // Detect duplicates
-  const seen = new Set();
-  const dupes = new Set();
-  for (const n of newNames) {
-    if (seen.has(n)) dupes.add(n);
-    seen.add(n);
-  }
-
+  // Duplicate detection across ALL files (not just visible)
+  const allNewNames = files.map(({ name }, i) => getNewName(name, i));
+  const seen = new Set(), dupes = new Set();
+  for (const n of allNewNames) { if (seen.has(n)) dupes.add(n); seen.add(n); }
   dupeWarn.classList.toggle('hidden', dupes.size === 0);
 
-  const visibleFiles = files.slice(0, PREVIEW_CAP);
-  const overflow = files.length > PREVIEW_CAP
-    ? `<tr class="empty-row"><td colspan="3">…and ${files.length - PREVIEW_CAP} more files not shown</td></tr>`
+  const visibleSlice = filtered.slice(0, PREVIEW_CAP);
+  const overflow = filtered.length > PREVIEW_CAP
+    ? `<tr class="empty-row"><td colspan="4">…and ${filtered.length - PREVIEW_CAP} more files not shown</td></tr>`
     : '';
-  previewTbody.innerHTML = visibleFiles.map(({ name }, i) => {
-    const newName = newNames[i];
-    const changed = newName !== name;
-    const isDupe  = dupes.has(newName);
-    let cls = '';
-    if (isDupe)        cls = 'dupe';
-    else if (changed)  cls = 'changed';
+
+  previewTbody.innerHTML = visibleSlice.map(({ name, originalIndex, newName, folderOverride }) => {
+    const changed    = newName !== name;
+    const isDupe     = dupes.has(newName);
+    const isSelected = selectedNames.has(name);
+    const cls        = isDupe ? 'dupe' : (changed ? 'changed' : '');
+    const displayNew = folderOverride
+      ? `<span class="folder-prefix">${esc(folderOverride)}/</span>${esc(newName)}`
+      : esc(newName);
     return `<tr${cls ? ` class="${cls}"` : ''}>
+      <td class="col-check"><input type="checkbox" class="row-check" data-name="${esc(name)}" ${isSelected ? 'checked' : ''}></td>
       <td title="${esc(name)}">${esc(name)}</td>
-      <td title="${esc(newName)}" class="${changed ? 'new-name' : ''}">${esc(newName)}</td>
-      <td><button class="del-btn" data-idx="${i}" title="Remove this file">×</button></td>
+      <td title="${folderOverride ? esc(folderOverride + '/' + newName) : esc(newName)}" class="${changed ? 'new-name' : ''}">${displayNew}</td>
+      <td><button class="del-btn" data-idx="${originalIndex}" title="Remove this file">×</button></td>
     </tr>`;
   }).join('') + overflow;
+
+  // Sync select-all header checkbox
+  const visibleNames = visibleSlice.map(f => f.name);
+  const allChecked   = visibleNames.length > 0 && visibleNames.every(n => selectedNames.has(n));
+  const someChecked  = visibleNames.some(n => selectedNames.has(n));
+  selectAll.checked       = allChecked;
+  selectAll.indeterminate = someChecked && !allChecked;
+
+  updateSelectionBar();
 }
 
 // ── File loading ───────────────────────────────────────────────────────────
@@ -412,15 +479,24 @@ function parseAndApplyCSV(text) {
 async function downloadZip() {
   if (!files.length) return;
 
+  const exportFiles = selectedNames.size > 0
+    ? files.filter(f => selectedNames.has(f.name))
+    : files;
+  if (!exportFiles.length) return;
+
   downloadBtn.disabled = true;
   downloadBtn.textContent = 'Processing…';
 
   try {
     const zip = new JSZip();
 
-    for (let i = 0; i < files.length; i++) {
-      const newName = getNewName(files[i].name, i);
-      zip.file(newName, files[i].getContent());
+    for (let i = 0; i < exportFiles.length; i++) {
+      const f       = exportFiles[i];
+      const renamed = getNewName(f.name, i);
+      const outPath = f.folderOverride
+        ? `${f.folderOverride}/${renamed.split('/').pop()}`
+        : renamed;
+      zip.file(outPath, f.getContent());
     }
 
     const blob = await zip.generateAsync(
@@ -473,12 +549,75 @@ document.addEventListener('DOMContentLoaded', () => {
   fileDrop.addEventListener('click', () => fileInput.click());
   fileBrowse.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
   fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fileInput.value = ''; });
-  clearBtn.addEventListener('click', () => { files = []; clearFileStatus(); updatePreview(); });
+  clearBtn.addEventListener('click', () => { files = []; selectedNames.clear(); clearFileStatus(); updatePreview(); });
 
   previewTbody.addEventListener('click', e => {
     const btn = e.target.closest('.del-btn');
     if (!btn) return;
-    files.splice(parseInt(btn.dataset.idx, 10), 1);
+    const idx = parseInt(btn.dataset.idx, 10);
+    selectedNames.delete(files[idx].name);
+    files.splice(idx, 1);
+    updatePreview();
+  });
+
+  // Search and sort
+  fileSearch.addEventListener('input', () => { filterQuery = fileSearch.value; updatePreview(); });
+  fileSort.addEventListener('change',  () => { sortMode = fileSort.value; updatePreview(); });
+
+  // Select all (acts on currently visible filtered rows)
+  selectAll.addEventListener('change', () => {
+    const visible = getFilteredSorted().slice(0, PREVIEW_CAP);
+    if (selectAll.checked) visible.forEach(f => selectedNames.add(f.name));
+    else                   visible.forEach(f => selectedNames.delete(f.name));
+    updatePreview();
+  });
+
+  // Row checkbox delegation — update Set without full re-render
+  previewTbody.addEventListener('change', e => {
+    const cb = e.target.closest('.row-check');
+    if (!cb) return;
+    if (cb.checked) selectedNames.add(cb.dataset.name);
+    else            selectedNames.delete(cb.dataset.name);
+    updateSelectionBar();
+    const allBoxes = [...previewTbody.querySelectorAll('.row-check')];
+    const allChk   = allBoxes.every(c => c.checked);
+    const someChk  = allBoxes.some(c => c.checked);
+    selectAll.checked       = allChk;
+    selectAll.indeterminate = someChk && !allChk;
+  });
+
+  // Delete selected
+  selDeleteBtn.addEventListener('click', () => {
+    files = files.filter(f => !selectedNames.has(f.name));
+    selectedNames.clear();
+    updatePreview();
+  });
+
+  // Move to folder
+  selFolderBtn.addEventListener('click', () => {
+    folderInputWrap.classList.remove('hidden');
+    folderInput.focus();
+  });
+  folderCancelBtn.addEventListener('click', () => {
+    folderInputWrap.classList.add('hidden');
+    folderInput.value = '';
+  });
+  folderConfirmBtn.addEventListener('click', () => {
+    const folder = folderInput.value.trim().replace(/^\/+|\/+$/g, '');
+    if (!folder) return;
+    files.forEach(f => { if (selectedNames.has(f.name)) f.folderOverride = folder; });
+    folderInputWrap.classList.add('hidden');
+    folderInput.value = '';
+    updatePreview();
+  });
+  folderInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  folderConfirmBtn.click();
+    if (e.key === 'Escape') folderCancelBtn.click();
+  });
+
+  // Remove from folder
+  selUnfolderBtn.addEventListener('click', () => {
+    files.forEach(f => { if (selectedNames.has(f.name)) delete f.folderOverride; });
     updatePreview();
   });
 
