@@ -38,6 +38,7 @@
           <div class="check-group">
             <label class="check-label"><input type="checkbox" id="trim-lead"> Leading spaces</label>
             <label class="check-label"><input type="checkbox" id="trim-trail"> Trailing spaces</label>
+            <label class="check-label"><input type="checkbox" id="trim-spaces"> Remove all spaces</label>
           </div>
           <div class="field-row">
             <div class="field">
@@ -85,9 +86,18 @@
             <label>Replace <small>($1 $2 $& … for groups / whole match)</small></label>
             <input type="text" id="fr-replace" placeholder="Replacement text">
           </div>
-          <div class="field">
-            <label>Max replacements <span class="help" title="Stop replacing after this many matches, counting left to right. Enter 1 to change only the first occurrence. Leave blank to replace all">?</span></label>
-            <input type="number" id="fr-maxrep" min="1" placeholder="∞">
+          <div class="field-row">
+            <div class="field">
+              <label>Max replacements <span class="help" title="Stop replacing after this many matches. Enter 1 to change only one occurrence. Leave blank to replace all">?</span></label>
+              <input type="number" id="fr-maxrep" min="1" placeholder="∞">
+            </div>
+            <div class="field">
+              <label>Direction <span class="help" title="From left replaces the first N matches. From right replaces the last N matches">?</span></label>
+              <select id="fr-dir">
+                <option value="ltr">From left</option>
+                <option value="rtl">From right</option>
+              </select>
+            </div>
           </div>
           <div class="field">
             <label>Apply to</label>
@@ -321,7 +331,7 @@
       <div class="table-wrap">
         <table class="preview-table">
           <thead>
-            <tr><th>Original</th><th>Renamed</th></tr>
+            <tr><th>Original</th><th>Renamed</th><th></th></tr>
           </thead>
           <tbody id="preview-tbody">
             <tr class="empty-row"><td colspan="2">Upload files to see a preview</td></tr>

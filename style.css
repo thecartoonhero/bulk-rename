@@ -553,7 +553,24 @@ textarea:focus {
 
 .preview-table tr:last-child td { border-bottom: none; }
 .preview-table tr.changed       { background: var(--changed-bg); }
-.preview-table tr.dupe td:last-child { color: var(--dupe-fg); font-weight: 600; }
+.preview-table tr.dupe td:nth-child(2) { color: var(--dupe-fg); font-weight: 600; }
+
+.preview-table th:last-child,
+.preview-table td:last-child { width: 28px; padding: 0 4px; text-align: center; }
+
+.del-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+.preview-table tr:hover .del-btn { opacity: 1; }
+.del-btn:hover { color: var(--error-fg); }
 
 .new-name { color: var(--accent); }
 

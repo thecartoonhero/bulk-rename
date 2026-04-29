@@ -86,6 +86,8 @@ function ruleTrim(name, ext) {
   if (fromStart > 0) n = n.slice(fromStart);
   if (fromEnd   > 0 && fromEnd < n.length) n = n.slice(0, n.length - fromEnd);
 
+  if (cb('trim-spaces')) n = n.replace(/\s+/g, '');
+
   return { name: n, ext };
 }
 
@@ -104,6 +106,7 @@ function ruleFindReplace(name, ext) {
   const after         = v('fr-after');
   const maxRepRaw     = v('fr-maxrep');
   const maxRep        = maxRepRaw === '' ? Infinity : (parseInt(maxRepRaw, 10) || 1);
+  const dir           = v('fr-dir');
 
   function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -131,10 +134,15 @@ function ruleFindReplace(name, ext) {
         return str.replace(re, replace);
       }
 
-      let count = 0;
+      const matches = [...str.matchAll(re)];
+      const chosen  = dir === 'rtl' ? matches.slice(-maxRep) : matches.slice(0, maxRep);
+      const replaceAt = new Set(chosen.map(m => m.index));
       return str.replace(re, (wholeMatch, ...rest) => {
-        const groups = rest.slice(0, rest.length - 2);
-        if (count < maxRep) { count++; return expandReplacement(replace, wholeMatch, ...groups); }
+        const offset = rest[rest.length - 2];
+        if (replaceAt.has(offset)) {
+          const groups = rest.slice(0, rest.length - 2);
+          return expandReplacement(replace, wholeMatch, ...groups);
+        }
         return wholeMatch;
       });
     } catch {
@@ -142,6 +150,12 @@ function ruleFindReplace(name, ext) {
     }
   }
 
+  // When context fields are set, run on the full basename so the lookahead/lookbehind
+  // can reference text across the name/extension boundary
+  if (before || after) {
+    const { name: n, ext: e } = splitName(doReplace(name + ext));
+    return { name: n, ext: e };
+  }
   return applyScope(name, ext, scope, doReplace);
 }
 
@@ -269,7 +283,7 @@ function updatePreview() {
   fileBadge.textContent = `${files.length} file${files.length !== 1 ? 's' : ''}`;
 
   if (files.length === 0) {
-    previewTbody.innerHTML = '<tr class="empty-row"><td colspan="2">Upload files to see a preview</td></tr>';
+    previewTbody.innerHTML = '<tr class="empty-row"><td colspan="3">Upload files to see a preview</td></tr>';
     downloadBtn.disabled = true;
     dupeWarn.classList.add('hidden');
     return;
@@ -291,7 +305,7 @@ function updatePreview() {
 
   const visibleFiles = files.slice(0, PREVIEW_CAP);
   const overflow = files.length > PREVIEW_CAP
-    ? `<tr class="empty-row"><td colspan="2">…and ${files.length - PREVIEW_CAP} more files not shown</td></tr>`
+    ? `<tr class="empty-row"><td colspan="3">…and ${files.length - PREVIEW_CAP} more files not shown</td></tr>`
     : '';
   previewTbody.innerHTML = visibleFiles.map(({ name }, i) => {
     const newName = newNames[i];
@@ -303,6 +317,7 @@ function updatePreview() {
     return `<tr${cls ? ` class="${cls}"` : ''}>
       <td title="${esc(name)}">${esc(name)}</td>
       <td title="${esc(newName)}" class="${changed ? 'new-name' : ''}">${esc(newName)}</td>
+      <td><button class="del-btn" data-idx="${i}" title="Remove this file">×</button></td>
     </tr>`;
   }).join('') + overflow;
 }
@@ -329,7 +344,7 @@ async function loadFiles(fileList) {
         }
 
         zip.forEach((path, entry) => {
-          if (!entry.dir && loaded.length < FILE_CAP) {
+          if (!entry.dir && files.length + loaded.length < FILE_CAP) {
             loaded.push({ name: path, getContent: () => entry.async('arraybuffer') });
           }
         });
@@ -337,18 +352,20 @@ async function loadFiles(fileList) {
         showFileError(`Could not read "${file.name}": ${err.message}`);
       }
     } else {
-      if (loaded.length < FILE_CAP) {
+      if (files.length + loaded.length < FILE_CAP) {
         loaded.push({ name: file.name, getContent: () => file.arrayBuffer() });
       }
     }
   }
 
-  if (loaded.length >= FILE_CAP) {
-    showFileWarning('Only the first 2,000 files were loaded. Renaming more files at once can slow down or freeze the browser. To process the rest, clear the current batch and drop the remaining files separately.');
+  const existingNames = new Set(files.map(f => f.name));
+  const newUnique = loaded.filter(f => !existingNames.has(f.name));
+  files = [...files, ...newUnique].sort((a, b) => a.name.localeCompare(b.name));
+
+  if (files.length >= FILE_CAP) {
+    showFileWarning('File limit reached (2,000 files). Remove individual files to make room for more.');
   }
 
-  loaded.sort((a, b) => a.name.localeCompare(b.name));
-  files = loaded;
   updatePreview();
 }
 
@@ -456,7 +473,14 @@ document.addEventListener('DOMContentLoaded', () => {
   fileDrop.addEventListener('click', () => fileInput.click());
   fileBrowse.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
   fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fileInput.value = ''; });
-  clearBtn.addEventListener('click', () => { files = []; updatePreview(); });
+  clearBtn.addEventListener('click', () => { files = []; clearFileStatus(); updatePreview(); });
+
+  previewTbody.addEventListener('click', e => {
+    const btn = e.target.closest('.del-btn');
+    if (!btn) return;
+    files.splice(parseInt(btn.dataset.idx, 10), 1);
+    updatePreview();
+  });
 
   // CSV drop zone
   makeDrop(csvDrop, async drops => {
