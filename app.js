@@ -23,6 +23,7 @@ const previewTbody = document.getElementById('preview-tbody');
 const fileBadge   = document.getElementById('file-badge');
 const clearBtn    = document.getElementById('clear-btn');
 const downloadBtn = document.getElementById('download-btn');
+const applyBtn    = document.getElementById('apply-btn');
 const dupeWarn    = document.getElementById('dupe-warning');
 const csvDrop     = document.getElementById('csv-drop');
 const csvInput    = document.getElementById('csv-input');
@@ -296,7 +297,12 @@ function getNewName(fullPath, index) {
 
 function getFilteredSorted() {
   const q = filterQuery.toLowerCase();
-  let result = files.map((f, i) => ({ ...f, originalIndex: i, newName: getNewName(f.name, i) }));
+  const hasSelection = selectedNames.size > 0;
+  let result = files.map((f, i) => ({
+    ...f,
+    originalIndex: i,
+    newName: (!hasSelection || selectedNames.has(f.name)) ? getNewName(f.name, i) : f.name
+  }));
   if (q) result = result.filter(f =>
     f.name.toLowerCase().includes(q) || f.newName.toLowerCase().includes(q)
   );
@@ -343,6 +349,7 @@ function updatePreview() {
   if (totalCount === 0) {
     previewTbody.innerHTML = '<tr class="empty-row"><td colspan="4">Upload files to see a preview</td></tr>';
     downloadBtn.disabled = true;
+    applyBtn.disabled = true;
     dupeWarn.classList.add('hidden');
     selectAll.checked = false;
     selectAll.indeterminate = false;
@@ -351,9 +358,13 @@ function updatePreview() {
   }
 
   downloadBtn.disabled = false;
+  applyBtn.disabled = false;
 
-  // Duplicate detection across ALL files (not just visible)
-  const allNewNames = files.map(({ name }, i) => getNewName(name, i));
+  // Duplicate detection across ALL files (not just visible), respecting selection scope
+  const hasSelectionForDupes = selectedNames.size > 0;
+  const allNewNames = files.map(({ name }, i) =>
+    (!hasSelectionForDupes || selectedNames.has(name)) ? getNewName(name, i) : name
+  );
   const seen = new Set(), dupes = new Set();
   for (const n of allNewNames) { if (seen.has(n)) dupes.add(n); seen.add(n); }
   dupeWarn.classList.toggle('hidden', dupes.size === 0);
@@ -476,6 +487,20 @@ function parseAndApplyCSV(text) {
 
 // ── Download ───────────────────────────────────────────────────────────────
 
+function applyRename() {
+  if (!files.length) return;
+  const hasSelection = selectedNames.size > 0;
+  const targets = hasSelection
+    ? files.filter(f => selectedNames.has(f.name))
+    : files;
+  targets.forEach((f) => {
+    if (!f.originalName) f.originalName = f.name;
+    f.name = getNewName(f.name, files.indexOf(f));
+  });
+  selectedNames.clear();
+  updatePreview();
+}
+
 async function downloadZip() {
   if (!files.length) return;
 
@@ -512,7 +537,7 @@ async function downloadZip() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } finally {
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Rename & Download ZIP';
+    downloadBtn.textContent = 'Download ZIP';
   }
 }
 
@@ -676,7 +701,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tab-rules').addEventListener('input',  debouncedUpdatePreview);
   document.getElementById('tab-rules').addEventListener('change', debouncedUpdatePreview);
 
-  // Download
+  // Apply Rename + Download
+  applyBtn.addEventListener('click', applyRename);
   downloadBtn.addEventListener('click', downloadZip);
 
   updatePreview();
