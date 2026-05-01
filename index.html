@@ -353,7 +353,7 @@
       <div class="table-wrap">
         <table class="preview-table">
           <thead>
-            <tr><th class="col-check"><input type="checkbox" id="select-all"></th><th>Original</th><th>Renamed</th><th></th></tr>
+            <tr><th class="col-check"><input type="checkbox" id="select-all"></th><th>Current</th><th>Renamed</th><th></th></tr>
           </thead>
           <tbody id="preview-tbody">
             <tr class="empty-row"><td colspan="4">Upload files to see a preview</td></tr>
@@ -361,8 +361,15 @@
         </table>
       </div>
 
+      <div class="apply-confirm hidden" id="apply-confirm">
+        <span id="apply-confirm-msg"></span>
+        <div class="apply-confirm-btns">
+          <button class="btn-apply-confirm" id="apply-confirm-yes">Apply to selected</button>
+          <button class="btn-ghost" id="apply-confirm-no">Cancel</button>
+        </div>
+      </div>
       <div class="action-bar">
-        <button class="btn-secondary action-apply" id="apply-btn" disabled>Apply Rename</button>
+        <button class="btn-apply" id="apply-btn" disabled>Apply Rename</button>
         <button class="btn-primary" id="download-btn" disabled>Download ZIP</button>
       </div>
     </div>
@@ -371,6 +378,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

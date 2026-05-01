@@ -22,8 +22,12 @@ const fileBrowse  = document.getElementById('file-browse');
 const previewTbody = document.getElementById('preview-tbody');
 const fileBadge   = document.getElementById('file-badge');
 const clearBtn    = document.getElementById('clear-btn');
-const downloadBtn = document.getElementById('download-btn');
-const applyBtn    = document.getElementById('apply-btn');
+const downloadBtn     = document.getElementById('download-btn');
+const applyBtn        = document.getElementById('apply-btn');
+const applyConfirm    = document.getElementById('apply-confirm');
+const applyConfirmMsg = document.getElementById('apply-confirm-msg');
+const applyConfirmYes = document.getElementById('apply-confirm-yes');
+const applyConfirmNo  = document.getElementById('apply-confirm-no');
 const dupeWarn    = document.getElementById('dupe-warning');
 const csvDrop     = document.getElementById('csv-drop');
 const csvInput    = document.getElementById('csv-input');
@@ -350,6 +354,7 @@ function updatePreview() {
     previewTbody.innerHTML = '<tr class="empty-row"><td colspan="4">Upload files to see a preview</td></tr>';
     downloadBtn.disabled = true;
     applyBtn.disabled = true;
+    applyConfirm.classList.add('hidden');
     dupeWarn.classList.add('hidden');
     selectAll.checked = false;
     selectAll.indeterminate = false;
@@ -597,18 +602,13 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePreview();
   });
 
-  // Row checkbox delegation — update Set without full re-render
+  // Row checkbox delegation — full re-render needed so selection scope is reflected in Renamed column
   previewTbody.addEventListener('change', e => {
     const cb = e.target.closest('.row-check');
     if (!cb) return;
     if (cb.checked) selectedNames.add(cb.dataset.name);
     else            selectedNames.delete(cb.dataset.name);
-    updateSelectionBar();
-    const allBoxes = [...previewTbody.querySelectorAll('.row-check')];
-    const allChk   = allBoxes.every(c => c.checked);
-    const someChk  = allBoxes.some(c => c.checked);
-    selectAll.checked       = allChk;
-    selectAll.indeterminate = someChk && !allChk;
+    updatePreview();
   });
 
   // Delete selected
@@ -702,7 +702,31 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tab-rules').addEventListener('change', debouncedUpdatePreview);
 
   // Apply Rename + Download
-  applyBtn.addEventListener('click', applyRename);
+  applyBtn.addEventListener('click', () => {
+    if (selectedNames.size > 0) {
+      const sel = selectedNames.size;
+      const tot = files.length;
+      applyConfirmMsg.textContent =
+        `Only ${sel} of ${tot} file${tot !== 1 ? 's' : ''} ${sel !== 1 ? 'are' : 'is'} selected — the rename will apply to those ${sel} only.`;
+      applyConfirm.classList.remove('hidden');
+      applyBtn.disabled = true;
+      downloadBtn.disabled = true;
+    } else {
+      applyRename();
+    }
+  });
+
+  applyConfirmYes.addEventListener('click', () => {
+    applyConfirm.classList.add('hidden');
+    applyRename();
+  });
+
+  applyConfirmNo.addEventListener('click', () => {
+    applyConfirm.classList.add('hidden');
+    applyBtn.disabled = false;
+    downloadBtn.disabled = false;
+  });
+
   downloadBtn.addEventListener('click', downloadZip);
 
   updatePreview();

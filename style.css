@@ -595,10 +595,53 @@ textarea:focus {
   flex-shrink: 0;
 }
 
-.action-apply {
-  margin-top: 0;
-  width: auto;
+.btn-apply {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
 }
+.btn-apply:hover:not(:disabled) { background: #d97706; }
+.btn-apply:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.action-bar .btn-primary {
+  padding: 8px 18px;
+  font-size: 13px;
+}
+
+.apply-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #92400e;
+  flex-shrink: 0;
+}
+.apply-confirm.hidden { display: none; }
+.apply-confirm-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-apply-confirm {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-apply-confirm:hover { background: #d97706; }
 
 .btn-primary {
   background: var(--accent);
