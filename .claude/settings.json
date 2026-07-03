@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "\\tmp\\br-verify",
+      "c:\\tmp\\br-verify"
+    ]
+  }
+}

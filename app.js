@@ -7,6 +7,7 @@ let mode          = 'rules';     // 'rules' | 'csv'
 let selectedNames = new Set();   // filenames currently selected
 let filterQuery   = '';          // current search filter string
 let sortMode      = 'name-asc';  // current sort mode
+let pendingChanges = false;      // true if rules/CSV config may not be reflected in current file names yet
 const NOW         = new Date();  // snapshot date/time for the session
 
 const ZIP_SIZE_LIMIT    = 500 * 1024 * 1024;  // 500 MB compressed
@@ -362,8 +363,10 @@ function updatePreview() {
     return;
   }
 
-  downloadBtn.disabled = false;
   applyBtn.disabled = false;
+
+  downloadBtn.disabled = pendingChanges;
+  downloadBtn.title = pendingChanges ? 'Click Apply Rename to enable downloading.' : '';
 
   // Duplicate detection across ALL files (not just visible), respecting selection scope
   const hasSelectionForDupes = selectedNames.size > 0;
@@ -444,6 +447,7 @@ async function loadFiles(fileList) {
   const existingNames = new Set(files.map(f => f.name));
   const newUnique = loaded.filter(f => !existingNames.has(f.name));
   files = [...files, ...newUnique].sort((a, b) => a.name.localeCompare(b.name));
+  if (newUnique.length) pendingChanges = true;
 
   if (files.length >= FILE_CAP) {
     showFileWarning('File limit reached (2,000 files). Remove individual files to make room for more.');
@@ -481,6 +485,7 @@ function parseAndApplyCSV(text) {
   }
 
   csvMap = map;
+  pendingChanges = true;
 
   const msg = `${map.size} mapping${map.size !== 1 ? 's' : ''} loaded` +
               (errors ? `, ${errors} invalid row${errors !== 1 ? 's' : ''} skipped` : '');
@@ -502,6 +507,7 @@ function applyRename() {
     if (!f.originalName) f.originalName = f.name;
     f.name = getNewName(f.name, files.indexOf(f));
   });
+  if (!hasSelection) pendingChanges = false;
   selectedNames.clear();
   updatePreview();
 }
@@ -578,7 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fileDrop.addEventListener('click', () => fileInput.click());
   fileBrowse.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
   fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fileInput.value = ''; });
-  clearBtn.addEventListener('click', () => { files = []; selectedNames.clear(); clearFileStatus(); updatePreview(); });
+  clearBtn.addEventListener('click', () => { files = []; selectedNames.clear(); pendingChanges = false; clearFileStatus(); updatePreview(); });
 
   previewTbody.addEventListener('click', e => {
     const btn = e.target.closest('.del-btn');
@@ -684,6 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
       mode = tab.dataset.tab;
+      pendingChanges = true;
       updatePreview();
     });
   });
@@ -692,13 +699,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.rule-check input[type="checkbox"]').forEach(checkbox => {
     const card = checkbox.closest('.rule-card');
     const sync = () => card.classList.toggle('enabled', checkbox.checked);
-    checkbox.addEventListener('change', () => { sync(); updatePreview(); });
+    checkbox.addEventListener('change', () => { sync(); pendingChanges = true; updatePreview(); });
     sync();
   });
 
   // Any input change inside the rules panel → refresh preview
-  document.getElementById('tab-rules').addEventListener('input',  debouncedUpdatePreview);
-  document.getElementById('tab-rules').addEventListener('change', debouncedUpdatePreview);
+  document.getElementById('tab-rules').addEventListener('input',  () => { pendingChanges = true; debouncedUpdatePreview(); });
+  document.getElementById('tab-rules').addEventListener('change', () => { pendingChanges = true; debouncedUpdatePreview(); });
 
   // Apply Rename + Download
   applyBtn.addEventListener('click', () => {
@@ -722,8 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   applyConfirmNo.addEventListener('click', () => {
     applyConfirm.classList.add('hidden');
-    applyBtn.disabled = false;
-    downloadBtn.disabled = false;
+    updatePreview();
   });
 
   downloadBtn.addEventListener('click', downloadZip);
