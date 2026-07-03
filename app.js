@@ -522,10 +522,9 @@ async function downloadZip() {
 
     for (let i = 0; i < exportFiles.length; i++) {
       const f       = exportFiles[i];
-      const renamed = getNewName(f.name, i);
       const outPath = f.folderOverride
-        ? `${f.folderOverride}/${renamed.split('/').pop()}`
-        : renamed;
+        ? `${f.folderOverride}/${f.name.split('/').pop()}`
+        : f.name;
       zip.file(outPath, f.getContent());
     }
 
